@@ -8,7 +8,8 @@ using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
-using T3MenuSharedApi;
+using CS2MenuManager.API.Class;
+using CS2MenuManager.API.Menu;
 using SharpTimerAPI;
 using SharpTimerAPI.Events;
 
@@ -16,9 +17,9 @@ namespace SSJPlugin;
 
 public class SSJPlugin : BasePlugin
 {
-    public override string ModuleAuthor => "EliteGames";
+    public override string ModuleAuthor => "EliteGames, Next-il";
     public override string ModuleName => "SSJ-Plugin";
-    public override string ModuleVersion => "2.1.1";
+    public override string ModuleVersion => "2.1.1-next";
 
     // ─── Sync algorithm constants (from FL-StrafeMaster) ───
     private const float  AccelDeadzone          = 0.20f;
@@ -28,7 +29,6 @@ public class SSJPlugin : BasePlugin
 
     private readonly ConcurrentDictionary<int, PlayerData> _players = new();
     private readonly ConcurrentDictionary<ulong, PlayerSettings> _settings = new();
-    private IT3MenuManager? _menuManager;
     private ISharpTimerEventSender? _stEventSender;
     private string? _dbConnectionString;
     private PluginConfig _config = new();
@@ -78,9 +78,6 @@ public class SSJPlugin : BasePlugin
 
     public override void OnAllPluginsLoaded(bool hotReload)
     {
-        try { _menuManager = new PluginCapability<IT3MenuManager>("t3menu:manager").Get(); }
-        catch { Logger.LogWarning("[SSJ] T3Menu API not found. !ssj menu unavailable."); }
-
         try
         {
             _stEventSender = new PluginCapability<ISharpTimerEventSender>("sharptimer:event_sender").Get();
@@ -575,17 +572,11 @@ public class SSJPlugin : BasePlugin
         return MathF.Atan2(y, x) * (180f / MathF.PI);
     }
 
-    // ─── !ssj Command: Open T3Menu Settings ───
+    // ─── !ssj Command: Open the settings menu (CS2MenuManager, shared/CS2MenuManager) ───
     [ConsoleCommand("css_ssj", "Open SSJ settings menu")]
     public void OnSSJCommand(CCSPlayerController? player, CommandInfo info)
     {
         if (player == null || !player.IsValid) return;
-
-        if (_menuManager == null)
-        {
-            player.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Red} T3Menu API not available.");
-            return;
-        }
 
         var steamId = player.SteamID;
         var settings = _settings.GetOrAdd(steamId, _ => new PlayerSettings
@@ -597,46 +588,61 @@ public class SSJPlugin : BasePlugin
         OpenSSJMenu(player, settings);
     }
 
+    // Next-il fork: the menu moved from T3Menu-API to CS2MenuManager, the menu library the rest of our
+    // plugins use, so T3Menu-API could come off every server. Items are plain text, so each change re-opens
+    // the menu to show the new state.
     private void OpenSSJMenu(CCSPlayerController player, PlayerSettings settings)
     {
-        if (_menuManager == null) return;
+        string OnOff(bool on) => on ? "ON" : "OFF";
 
-        IT3Menu menu = _menuManager.CreateMenu("SSJ Settings", freezePlayer: false, hasSound: true, isExitable: true);
+        var menu = new WasdMenu("SSJ Settings", this) { ExitButton = true };
 
-        menu.AddBoolOption("Enabled", defaultValue: settings.Enabled, (p, o) =>
+        menu.AddItem($"Enabled: {OnOff(settings.Enabled)}", (p, option) =>
         {
             settings.Enabled = !settings.Enabled;
             p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} SSJ {(settings.Enabled ? $"{ChatColors.Green}Enabled" : $"{ChatColors.Red}Disabled")}");
             _ = Task.Run(async () => await SavePlayerSettingsAsync(p.SteamID, settings));
+            OpenSSJMenu(p, settings);
         });
 
-        menu.AddBoolOption("Repeat", defaultValue: settings.Repeat, (p, o) =>
+        menu.AddItem($"Repeat: {OnOff(settings.Repeat)}", (p, option) =>
         {
             settings.Repeat = !settings.Repeat;
             p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} Repeat {(settings.Repeat ? $"{ChatColors.Green}On" : $"{ChatColors.Red}Off")}");
             _ = Task.Run(async () => await SavePlayerSettingsAsync(p.SteamID, settings));
+            OpenSSJMenu(p, settings);
         });
 
-        List<object> modeValues = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        menu.AddSliderOption("Jumps", values: modeValues, defaultValue: settings.Mode, displayItems: 3, (p, o, index) =>
-        {
-            if (o is IT3Option sliderOption && sliderOption.DefaultValue != null)
-            {
-                settings.Mode = (int)sliderOption.DefaultValue;
-                p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} Showing {ChatColors.LightBlue}{settings.Mode}{ChatColors.Default} jumps");
-                _ = Task.Run(async () => await SavePlayerSettingsAsync(p.SteamID, settings));
-            }
-        });
+        menu.AddItem($"Jumps: {settings.Mode}", (p, option) => OpenJumpsMenu(p, settings, menu));
 
-        menu.AddOption("Reset Stats", (p, o) =>
+        menu.AddItem("Reset Stats", (p, option) =>
         {
             if (_players.TryGetValue(p.Slot, out var data))
                 data.ResetChain();
             settings.AlreadyShown = false;
             p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} Stats reset.");
-            menu.Close(p);
+            MenuManager.CloseActiveMenu(p);
         });
 
-        _menuManager.OpenMainMenu(player, menu);
+        menu.Display(player, 0);
+    }
+
+    private void OpenJumpsMenu(CCSPlayerController player, PlayerSettings settings, WasdMenu parent)
+    {
+        var menu = new WasdMenu("SSJ Jumps", this) { ExitButton = true, PrevMenu = parent };
+
+        for (var jumps = 1; jumps <= 10; jumps++)
+        {
+            var value = jumps;
+            menu.AddItem(value == settings.Mode ? $"{value} (current)" : $"{value}", (p, option) =>
+            {
+                settings.Mode = value;
+                p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} Showing {ChatColors.LightBlue}{settings.Mode}{ChatColors.Default} jumps");
+                _ = Task.Run(async () => await SavePlayerSettingsAsync(p.SteamID, settings));
+                OpenSSJMenu(p, settings);
+            });
+        }
+
+        menu.Display(player, 0);
     }
 }
