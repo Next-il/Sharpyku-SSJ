@@ -1,0 +1,138 @@
+<root>
+	<styles>
+		<include src="s2r://panorama/styles/custom_game/hud_shared.vcss_c" />
+		<include src="s2r://panorama/styles/custom_game/ssj_hud.vcss_c" />
+	</styles>
+
+	<!--
+		SSJ HUD - speed stats on jump, one small card. Driven by Panels/SsjHud.cs in the SSJ plugin.
+		Replaces the per-jump chat line "Jump 2 | Speed: 478 | Gain: +16.0% | Sync: 82% | Strafes: 5":
+		one row per jump of the run (jumps 1..10, as many rows as the player's !ssj JUMPS), the takeoff
+		speed of the first jump (PRE) in the head, the run's average sync and the speed gained since
+		PRE in the foot. Sits in the same family as the SharpTimer HUD, away from its default spots.
+
+		CONTRACT
+		  RootPanelId = "SsjHudRoot"   RevealClass = "show"   RowCount = 0
+		  CaptureInput = false         HideHud = None         SharedText = false
+
+		NOT INTERACTIVE. hittest false everywhere. Opened once per player and left open; the card has
+		its own "show".
+
+		ONE-OF CLASSES
+		  sj_skin   ac-ice | ac-orange | ac-pink | ac-lime | ac-white          accent
+		  sj_pos    p-xl | p-xr | p-xa | p-tc | p-rm | p-br                    where it sits
+		  sj_sz     sz-s | sz-m | sz-l                                         size (ui-scale 85 / 100 / 115%)
+		  sj        ay-a | ay-b | ay-c | ay-d (average sync tier)   tg-up | tg-dn (speed gained)
+		  sjrN      g-up | g-flat | g-dn (gain)   y-a | y-b | y-c | y-d (sync 80+ / 60+ / 40+ / under 40)
+
+		CLASSES THE SERVER TOGGLES
+		  sj        show   spec (watching another player: their name in the head)
+		  sjrN      hidden (past the player's JUMPS)   f (this jump is in)   new (the latest jump)
+
+		DIALOG VARIABLES
+		  sj_pre sj_who sj_avg sj_tot   sjrN_sp sjrN_g sjrN_sy sjrN_st   N = 0..9 (row N is jump N+1)
+	-->
+	<Panel class="hud-screen sj-screen" hittest="false">
+		<Panel id="SsjHudRoot" class="sj-root" hittest="false">
+			<Panel id="sj_skin" class="sj-skin ac-ice" hittest="false">
+				<Panel id="sj_pos" class="sj-pos p-xl" hittest="false">
+					<Panel id="sj_sz" class="sj-sz sz-m" hittest="false">
+					<Panel id="sj" class="sj" hittest="false">
+						<Panel class="sj-head" hittest="false">
+							<Label class="sj-k" text="SSJ" hittest="false" />
+							<Label class="sj-who" text="{s:sj_who}" hittest="false" />
+							<Panel class="fill" hittest="false" />
+							<Label class="sj-pk" text="PRE" hittest="false" />
+							<Label class="sj-pv" text="{s:sj_pre}" hittest="false" />
+						</Panel>
+						<Panel class="sj-cols" hittest="false">
+							<Label class="sj-h c-n" text="#" hittest="false" />
+							<Label class="sj-h c-sp" text="SPEED" hittest="false" />
+							<Label class="sj-h c-g" text="GAIN" hittest="false" />
+							<Label class="sj-h c-sy" text="SYNC" hittest="false" />
+							<Label class="sj-h c-st" text="STRAFES" hittest="false" />
+						</Panel>
+						<Panel id="sjr0" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="1" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr0_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr0_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr0_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr0_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr1" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="2" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr1_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr1_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr1_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr1_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr2" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="3" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr2_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr2_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr2_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr2_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr3" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="4" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr3_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr3_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr3_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr3_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr4" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="5" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr4_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr4_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr4_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr4_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr5" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="6" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr5_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr5_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr5_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr5_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr6" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="7" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr6_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr6_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr6_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr6_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr7" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="8" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr7_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr7_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr7_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr7_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr8" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="9" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr8_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr8_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr8_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr8_st}" hittest="false" />
+						</Panel>
+						<Panel id="sjr9" class="sj-row" hittest="false">
+							<Label class="sj-v c-n" text="10" hittest="false" />
+							<Label class="sj-v c-sp" text="{s:sjr9_sp}" hittest="false" />
+							<Label class="sj-v c-g" text="{s:sjr9_g}" hittest="false" />
+							<Label class="sj-v c-sy" text="{s:sjr9_sy}" hittest="false" />
+							<Label class="sj-v c-st" text="{s:sjr9_st}" hittest="false" />
+						</Panel>
+						<Panel class="sj-foot" hittest="false">
+							<Label class="sj-fk" text="AVG SYNC" hittest="false" />
+							<Label class="sj-fv sj-avg" text="{s:sj_avg}" hittest="false" />
+							<Panel class="fill" hittest="false" />
+							<Label class="sj-fk" text="GAINED" hittest="false" />
+							<Label class="sj-fv sj-tot" text="{s:sj_tot}" hittest="false" />
+						</Panel>
+					</Panel>
+					</Panel>
+				</Panel>
+			</Panel>
+		</Panel>
+	</Panel>
+</root>

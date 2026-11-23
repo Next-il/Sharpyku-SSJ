@@ -1,0 +1,228 @@
+/*
+    ssj_hud - the SSJ card: speed stats on jump. Include hud_shared first.
+
+    One card, one row per jump of the run (as many rows as the player's !ssj JUMPS, up to 10). The rows
+    are fixed panels, so the card has its full height from the first jump and never grows while the run
+    goes on; an empty row shows dashes until its jump lands. The latest jump's row carries "new", and
+    that background slides down the card jump by jump.
+
+    Same family as the SharpTimer HUD (sharptimer_hud.css): the shared card level, a 2px accent edge on
+    top like the timer card, Stratum2 Mono numbers, the same greens, yellows and reds, and the same five
+    accents. Default spot is left of the crosshair, which none of the timer HUD's parts use by default.
+
+    PLACEMENT. Three panels: sj-pos (where: a p-* class), sj-sz (size: ui-scale) and the card, which
+    carries "show". The crosshair spots (p-xl, p-xr) and the one next to the timer card (p-br) take half
+    the screen and pin the card's inner edge to it, so the card keeps its distance from the crosshair at
+    every size and every aspect ratio, and grows away from it.
+
+    UNVERIFIED IN GAME, each with a harmless failure:
+      - ui-scale (sz-s / sz-l): if it does nothing, every size draws as M.
+      - blur in transition-property: the card is sharp at once.
+*/
+
+.sj-screen { overflow: noclip; }
+
+/* Opened once per player and left open; the card carries its own "show". */
+.sj-root {
+    width: 100%;
+    height: 100%;
+    overflow: noclip;
+    visibility: collapse;
+}
+.sj-root.show { visibility: visible; }
+
+.sj-skin {
+    width: 100%;
+    height: 100%;
+    overflow: noclip;
+}
+
+.sj-pos, .sj-sz {
+    width: fit-children;
+    height: fit-children;
+    overflow: noclip;
+}
+.sj-sz.sz-s { ui-scale: 85%; }
+.sj-sz.sz-m { ui-scale: 100%; }
+.sj-sz.sz-l { ui-scale: 115%; }
+
+.fill { width: fill-parent-flow(1.0); height: 1px; }
+
+/* ------------------------------------------------------------------ spots (1080p pixels) */
+
+/* Left of the crosshair: the card's right edge 140px left of the screen's middle */
+.sj-pos.p-xl { width: 50%; horizontal-align: left; vertical-align: center; }
+.sj-pos.p-xl .sj-sz { horizontal-align: right; margin-right: 140px; }
+/* Right of the crosshair */
+.sj-pos.p-xr { width: 50%; horizontal-align: right; vertical-align: center; }
+.sj-pos.p-xr .sj-sz { horizontal-align: left; margin-left: 140px; }
+/* Above the crosshair: the bottom edge pinned, more jumps grow it upward */
+.sj-pos.p-xa { horizontal-align: center; vertical-align: bottom; margin-bottom: 600px; }
+/* Top center, under the score and the timer's toast */
+.sj-pos.p-tc { horizontal-align: center; vertical-align: top; margin-top: 124px; }
+/* Right side, between the timer's records feed and its keys */
+.sj-pos.p-rm { horizontal-align: right; vertical-align: center; margin-right: 16px; transform: translate3d(0px, -30px, 0px); }
+/* Bottom, right of the timer card: the card's left edge 206px right of the middle */
+.sj-pos.p-br { width: 50%; horizontal-align: right; vertical-align: bottom; margin-bottom: 118px; }
+.sj-pos.p-br .sj-sz { horizontal-align: left; margin-left: 206px; }
+
+/* ------------------------------------------------------------------ the card */
+
+.sj {
+    width: 232px;
+    flow-children: down;
+    padding: 7px 10px 8px 10px;
+    border-top: 2px solid #62c4ff;
+    world-blur: gaussian(8.0);
+    background-color: gradient(linear, 0% 0%, 0% 100%, from(#12171ec6), to(#0b0f14d0));
+    opacity: 0;
+    blur: gaussian(6.0);
+    transform: translateY(12px);
+    transition-property: opacity, transform, blur;
+    transition-duration: 0.2s, 0.22s, 0.2s;
+    transition-timing-function: ease-out, cubic-bezier( 0.2, 0.8, 0.25, 1.0 ), ease-out;
+}
+.sj.show { opacity: 1; blur: gaussian(0.0); transform: translateY(0px); }
+
+/* head: SSJ, the watched player's name while spectating, PRE */
+.sj-head { flow-children: right; width: 100%; height: 16px; }
+.sj-k {
+    vertical-align: center;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 9.5px;
+    letter-spacing: 1.6px;
+    color: #62c4ff;
+}
+.sj-who {
+    vertical-align: center;
+    margin-left: 6px;
+    max-width: 100px;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 9.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #ffffff;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    visibility: collapse;
+}
+.sj.spec .sj-who { visibility: visible; }
+.sj-pk {
+    vertical-align: center;
+    margin-bottom: 1px;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 8.5px;
+    letter-spacing: 1.2px;
+    color: #8b939c;
+}
+.sj-pv {
+    width: 34px;
+    vertical-align: center;
+    text-align: right;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 12px;
+    color: #ffffff;
+}
+
+/* columns: fixed widths, right-aligned mono digits, so a changing number never moves a column */
+.sj-cols, .sj-row { flow-children: right; width: 100%; }
+.sj-cols { height: 12px; margin-top: 5px; }
+.c-n { width: 16px; padding-left: 3px; }
+.c-sp { width: 46px; text-align: right; }
+.c-g { width: 56px; text-align: right; }
+.c-sy { width: 42px; text-align: right; }
+.c-st { width: fill-parent-flow(1.0); text-align: right; }
+
+.sj-h {
+    vertical-align: center;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 7.5px;
+    letter-spacing: 1px;
+    color: #6b737c;
+}
+.sj-h.c-st { padding-right: 4px; }
+
+/* rows: dashes until the jump lands */
+.sj-row {
+    height: 18px;
+    margin-top: 1px;
+    background-color: #ffffff00;
+    transition-property: background-color;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
+}
+.sj-row.new { background-color: #ffffff12; }
+
+.sj-v {
+    vertical-align: center;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 11px;
+    color: #ffffff2e;
+    transition-property: color;
+    transition-duration: 0.2s;
+}
+.sj-v.c-n { font-size: 9.5px; color: #5c646d; }
+.sj-v.c-sp { font-size: 13px; }
+.sj-v.c-st { padding-right: 4px; }
+
+.sj-row.f .c-n { color: #8b939c; }
+.sj-row.f .c-sp { color: #ffffff; }
+.sj-row.f .c-st { color: #c4c9cf; }
+
+/* gain: up, flat, down */
+.sj-row.g-up .c-g { color: #4fd17f; }
+.sj-row.g-flat .c-g { color: #f2c14e; }
+.sj-row.g-dn .c-g { color: #f26450; }
+
+/* sync: 80+, 60+, 40+, under 40 (the chat line's green, yellow, gold, red) */
+.sj-row.y-a .c-sy { color: #4fd17f; }
+.sj-row.y-b .c-sy { color: #e3d867; }
+.sj-row.y-c .c-sy { color: #f2a33a; }
+.sj-row.y-d .c-sy { color: #f26450; }
+
+/* foot: the run so far */
+.sj-foot { flow-children: right; width: 100%; height: 14px; margin-top: 5px; }
+.sj-fk {
+    vertical-align: center;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 8px;
+    letter-spacing: 1.2px;
+    color: #8b939c;
+}
+.sj-fv {
+    vertical-align: center;
+    margin-left: 5px;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 10.5px;
+    color: #d7dce1;
+    transition-property: color;
+    transition-duration: 0.2s;
+}
+.sj-tot { padding-right: 4px; }
+.sj.ay-a .sj-avg { color: #4fd17f; }
+.sj.ay-b .sj-avg { color: #e3d867; }
+.sj.ay-c .sj-avg { color: #f2a33a; }
+.sj.ay-d .sj-avg { color: #f26450; }
+.sj.tg-up .sj-tot { color: #4fd17f; }
+.sj.tg-dn .sj-tot { color: #f26450; }
+
+/* ------------------------------------------------------------------ accent (the timer HUD's five) */
+
+.sj-skin.ac-ice .sj { border-top: 2px solid #62c4ff; }
+.sj-skin.ac-ice .sj-k, .sj-skin.ac-ice .sj-row.new .c-n { color: #62c4ff; }
+.sj-skin.ac-orange .sj { border-top: 2px solid #f7783c; }
+.sj-skin.ac-orange .sj-k, .sj-skin.ac-orange .sj-row.new .c-n { color: #f7783c; }
+.sj-skin.ac-pink .sj { border-top: 2px solid #ff6fae; }
+.sj-skin.ac-pink .sj-k, .sj-skin.ac-pink .sj-row.new .c-n { color: #ff6fae; }
+.sj-skin.ac-lime .sj { border-top: 2px solid #a2e05a; }
+.sj-skin.ac-lime .sj-k, .sj-skin.ac-lime .sj-row.new .c-n { color: #a2e05a; }
+.sj-skin.ac-white .sj { border-top: 2px solid #e8ebee; }
+.sj-skin.ac-white .sj-k, .sj-skin.ac-white .sj-row.new .c-n { color: #e8ebee; }

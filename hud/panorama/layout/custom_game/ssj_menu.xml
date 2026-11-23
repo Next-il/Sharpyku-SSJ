@@ -1,0 +1,259 @@
+<root>
+	<styles>
+		<include src="s2r://panorama/styles/custom_game/hud_shared.vcss_c" />
+		<include src="s2r://panorama/styles/custom_game/ssj_menu.vcss_c" />
+	</styles>
+
+	<!--
+		!ssj - the SSJ settings, clickable. Driven by Panels/SsjMenu.cs in the SSJ plugin; replaces the
+		CS2MenuManager WASD menu. Same shell and option rows as the timer's !hud panel
+		(sharptimer_menu.xml), on one page. The SSJ card behind the menu follows every click and shows a
+		sample run while the menu is open.
+
+		CONTRACT
+		  RootPanelId = "SsjMenuRoot"   RevealClass = "show"   CloseButtonId = "sjm_close"   RowCount = 0
+		  CaptureInput = true           SharedText = false
+
+		BUTTONS (PanelAction.Button, by id)
+		  sjm_en_on sjm_en_off                    SSJ on / off
+		  sjm_out_hud sjm_out_chat sjm_out_both   where the stats go
+		  sjm_j_1 .. sjm_j_10                     jumps per run
+		  sjm_rep_on sjm_rep_off                  every run / first run only
+		  sjm_hold_3 sjm_hold_6 sjm_hold_10 sjm_hold_0   how long the card stays (0 = until the next run)
+		  sjm_ac_{ice|orange|pink|lime|white}     accent
+		  sjm_z_{xl|xr|xa|tc|rm|br}               the spots on the mini map
+		  sjm_sz_s sjm_sz_m sjm_sz_l              size
+		  sjm_reset sjm_defaults                  reset the current run's stats / settings back to the defaults
+
+		CLASSES THE SERVER TOGGLES
+		  every button above          on (the current choice; spots: cur)
+		  sjm_r_out sjm_r_jumps sjm_r_rep sjm_r_hold sjm_r_ac sjm_wbox sjm_r_size   disabled
+		  sjm_mb                      p-{xl|xr|xa|tc|rm|br}   sz-s|m|l   off
+
+		DIALOG VARIABLES
+		  sjm_where sjm_msg
+	-->
+	<Panel class="hud-screen" hittest="false">
+		<Panel id="SsjMenuRoot" class="hud-root hud-card sjm-root">
+			<Panel class="hud-head">
+				<Label class="hud-title sjm-title" text="SSJ SETTINGS" hittest="false" />
+				<Label class="hud-tag sjm-tag" text="SPEED STATS ON JUMP" hittest="false" />
+				<Panel class="fill" hittest="false" />
+				<Button id="sjm_close" class="hud-exit">
+					<Label class="hud-x" text="&#x2715;" hittest="false" />
+				</Button>
+			</Panel>
+			<Panel class="sjm-body" hittest="false">
+				<Panel class="sjm-left" hittest="false">
+					<Panel id="sjm_r_en" class="vh-row" hittest="false">
+						<Panel class="vh-txt" hittest="false">
+							<Label class="se-k" text="SSJ" hittest="false" />
+							<Label class="se-d" text="Each jump out of the start zone." hittest="false" />
+						</Panel>
+						<Panel class="se-opts vh-opts" hittest="false">
+							<Button id="sjm_en_on" class="se-opt">
+								<Label class="se-opt-lbl" text="ON" hittest="false" />
+							</Button>
+							<Button id="sjm_en_off" class="se-opt">
+								<Label class="se-opt-lbl" text="OFF" hittest="false" />
+							</Button>
+						</Panel>
+					</Panel>
+					<Panel id="sjm_r_out" class="vh-row" hittest="false">
+						<Panel class="vh-txt" hittest="false">
+							<Label class="se-k" text="SHOW IN" hittest="false" />
+							<Label class="se-d" text="The card, chat lines, or both." hittest="false" />
+						</Panel>
+						<Panel class="se-opts vh-opts" hittest="false">
+							<Button id="sjm_out_hud" class="se-opt">
+								<Label class="se-opt-lbl" text="HUD" hittest="false" />
+							</Button>
+							<Button id="sjm_out_chat" class="se-opt">
+								<Label class="se-opt-lbl" text="CHAT" hittest="false" />
+							</Button>
+							<Button id="sjm_out_both" class="se-opt">
+								<Label class="se-opt-lbl" text="BOTH" hittest="false" />
+							</Button>
+						</Panel>
+					</Panel>
+					<Panel id="sjm_r_jumps" class="vh-row" hittest="false">
+						<Panel class="vh-txt" hittest="false">
+							<Label class="se-k" text="JUMPS" hittest="false" />
+							<Label class="se-d" text="Per run." hittest="false" />
+						</Panel>
+						<Panel class="se-opts vh-opts" hittest="false">
+							<Button id="sjm_j_1" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="1" hittest="false" />
+							</Button>
+							<Button id="sjm_j_2" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="2" hittest="false" />
+							</Button>
+							<Button id="sjm_j_3" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="3" hittest="false" />
+							</Button>
+							<Button id="sjm_j_4" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="4" hittest="false" />
+							</Button>
+							<Button id="sjm_j_5" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="5" hittest="false" />
+							</Button>
+							<Button id="sjm_j_6" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="6" hittest="false" />
+							</Button>
+							<Button id="sjm_j_7" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="7" hittest="false" />
+							</Button>
+							<Button id="sjm_j_8" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="8" hittest="false" />
+							</Button>
+							<Button id="sjm_j_9" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="9" hittest="false" />
+							</Button>
+							<Button id="sjm_j_10" class="se-opt sjm-num">
+								<Label class="se-opt-lbl" text="10" hittest="false" />
+							</Button>
+						</Panel>
+					</Panel>
+					<Panel id="sjm_r_rep" class="vh-row" hittest="false">
+						<Panel class="vh-txt" hittest="false">
+							<Label class="se-k" text="EVERY RUN" hittest="false" />
+							<Label class="se-d" text="Off: your first run only, until reset." hittest="false" />
+						</Panel>
+						<Panel class="se-opts vh-opts" hittest="false">
+							<Button id="sjm_rep_on" class="se-opt">
+								<Label class="se-opt-lbl" text="ON" hittest="false" />
+							</Button>
+							<Button id="sjm_rep_off" class="se-opt">
+								<Label class="se-opt-lbl" text="OFF" hittest="false" />
+							</Button>
+						</Panel>
+					</Panel>
+					<Panel id="sjm_r_hold" class="vh-row" hittest="false">
+						<Panel class="vh-txt" hittest="false">
+							<Label class="se-k" text="KEEP IT UP" hittest="false" />
+							<Label class="se-d" text="After the last jump." hittest="false" />
+						</Panel>
+						<Panel class="se-opts vh-opts" hittest="false">
+							<Button id="sjm_hold_3" class="se-opt">
+								<Label class="se-opt-lbl" text="3S" hittest="false" />
+							</Button>
+							<Button id="sjm_hold_6" class="se-opt">
+								<Label class="se-opt-lbl" text="6S" hittest="false" />
+							</Button>
+							<Button id="sjm_hold_10" class="se-opt">
+								<Label class="se-opt-lbl" text="10S" hittest="false" />
+							</Button>
+							<Button id="sjm_hold_0" class="se-opt">
+								<Label class="se-opt-lbl" text="ALWAYS" hittest="false" />
+							</Button>
+						</Panel>
+					</Panel>
+					<Panel id="sjm_r_ac" class="vh-row" hittest="false">
+						<Panel class="vh-txt" hittest="false">
+							<Label class="se-k" text="ACCENT" hittest="false" />
+							<Label class="se-d" text="The card's edge and the latest jump." hittest="false" />
+						</Panel>
+						<Panel class="se-opts vh-opts" hittest="false">
+							<Button id="sjm_ac_ice" class="se-opt sw-opt">
+								<Panel class="sw sw-ice" hittest="false" />
+							</Button>
+							<Button id="sjm_ac_orange" class="se-opt sw-opt">
+								<Panel class="sw sw-orange" hittest="false" />
+							</Button>
+							<Button id="sjm_ac_pink" class="se-opt sw-opt">
+								<Panel class="sw sw-pink" hittest="false" />
+							</Button>
+							<Button id="sjm_ac_lime" class="se-opt sw-opt">
+								<Panel class="sw sw-lime" hittest="false" />
+							</Button>
+							<Button id="sjm_ac_white" class="se-opt sw-opt">
+								<Panel class="sw sw-white" hittest="false" />
+							</Button>
+						</Panel>
+					</Panel>
+				</Panel>
+				<Panel class="sjm-right" hittest="false">
+					<Panel id="sjm_wbox" class="sjm-where-box" hittest="false">
+						<Panel class="sjm-lhead" hittest="false">
+							<Label class="sm-k" text="WHERE IT GOES" hittest="false" />
+							<Panel class="fill" hittest="false" />
+							<Label class="sjm-where" text="{s:sjm_where}" hittest="false" />
+						</Panel>
+						<Panel class="mm" hittest="false">
+							<Panel class="mm-cs mm-radar" hittest="false" />
+							<Panel class="mm-cs mm-money" hittest="false" />
+							<Panel class="mm-cs mm-score" hittest="false" />
+							<Panel class="mm-cs mm-kill" hittest="false" />
+							<Panel class="mm-cs mm-chat" hittest="false" />
+							<Panel class="mm-cs mm-hp" hittest="false" />
+							<Panel class="mm-cs mm-ammo" hittest="false" />
+							<Panel class="mm-cs mm-weap" hittest="false" />
+							<Panel class="mm-cs mm-x" hittest="false" />
+							<Panel class="mm-st mm-st-card" hittest="false" />
+							<Panel class="mm-st mm-st-sp" hittest="false" />
+							<Panel class="mm-st mm-st-ks" hittest="false" />
+							<Panel class="mm-st mm-st-mr" hittest="false" />
+							<Panel id="sjm_mb" class="mm-blk sz-m p-xl" hittest="false">
+								<Label class="mm-blk-l" text="SSJ" hittest="false" />
+							</Panel>
+							<Button id="sjm_z_xl" class="mm-z z-xl">
+								<Panel class="mm-z-in" hittest="false" />
+							</Button>
+							<Button id="sjm_z_xr" class="mm-z z-xr">
+								<Panel class="mm-z-in" hittest="false" />
+							</Button>
+							<Button id="sjm_z_xa" class="mm-z z-xa">
+								<Panel class="mm-z-in" hittest="false" />
+							</Button>
+							<Button id="sjm_z_tc" class="mm-z z-tc">
+								<Panel class="mm-z-in" hittest="false" />
+							</Button>
+							<Button id="sjm_z_rm" class="mm-z z-rm">
+								<Panel class="mm-z-in" hittest="false" />
+							</Button>
+							<Button id="sjm_z_br" class="mm-z z-br">
+								<Panel class="mm-z-in" hittest="false" />
+							</Button>
+						</Panel>
+						<Label class="sm-hint" text="Click a spot. Grey: CS2's HUD and the timer's own spots." hittest="false" />
+					</Panel>
+					<Panel id="sjm_r_size" class="vh-row sjm-size" hittest="false">
+						<Panel class="vh-txt" hittest="false">
+							<Label class="se-k" text="SIZE" hittest="false" />
+						</Panel>
+						<Panel class="se-opts vh-opts" hittest="false">
+							<Button id="sjm_sz_s" class="se-opt">
+								<Label class="se-opt-lbl" text="S" hittest="false" />
+							</Button>
+							<Button id="sjm_sz_m" class="se-opt">
+								<Label class="se-opt-lbl" text="M" hittest="false" />
+							</Button>
+							<Button id="sjm_sz_l" class="se-opt">
+								<Label class="se-opt-lbl" text="L" hittest="false" />
+							</Button>
+						</Panel>
+					</Panel>
+					<Panel class="sjm-reset" hittest="false">
+						<Button id="sjm_reset" class="se-opt sjm-rs">
+							<Label class="se-opt-lbl" text="RESET STATS" hittest="false" />
+						</Button>
+						<Button id="sjm_defaults" class="se-opt sjm-rs">
+							<Label class="se-opt-lbl" text="DEFAULTS" hittest="false" />
+						</Button>
+						<Label class="rs-msg" text="{s:sjm_msg}" hittest="false" />
+					</Panel>
+				</Panel>
+			</Panel>
+			<Panel class="hud-foot sjm-foot">
+				<Label class="sm-cmd" text="!ssj" hittest="false" />
+				<Label class="sm-foot-t" text="THIS MENU" hittest="false" />
+				<Label class="sm-cmd" text="!ssj on|off" hittest="false" />
+				<Label class="sm-foot-t" text="SSJ" hittest="false" />
+				<Label class="sm-cmd" text="!ssj 1-10" hittest="false" />
+				<Label class="sm-foot-t" text="JUMPS" hittest="false" />
+				<Label class="sm-cmd" text="!ssj hud|chat|both" hittest="false" />
+				<Label class="sm-foot-t" text="SHOW IN" hittest="false" />
+			</Panel>
+		</Panel>
+	</Panel>
+</root>

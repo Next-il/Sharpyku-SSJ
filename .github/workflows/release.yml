@@ -38,15 +38,16 @@ jobs:
       - name: Build
         run: dotnet build "$PROJECT" -c Release --nologo -o build-out
 
-      # One folder, laid out exactly as it sits under addons/counterstrikesharp/plugins/ - the same
-      # files the upstream zip had. An allowlist on purpose: CounterStrikeSharp's own dlls must never
-      # ship next to the plugin, CS2MenuManager and SharpTimerAPI load from shared/, and no pdb or
-      # server config goes in.
+      # One folder, laid out exactly as it sits under addons/counterstrikesharp/plugins/ - the upstream
+      # zip's files plus PanoramaManager.dll for the HUD (each plugin loads its own copy from its folder).
+      # An allowlist on purpose: CounterStrikeSharp's own dlls must never ship next to the plugin,
+      # SharpTimerAPI loads from shared/, and no pdb or server config goes in. The HUD layouts
+      # (hud/panorama) ship in the workshop addon, not here.
       - name: Stage release layout
         run: |
           set -e
           mkdir -p "out/$PLUGIN"
-          cp "build-out/$PLUGIN.dll" "build-out/$PLUGIN.deps.json" build-out/MySqlConnector.dll "out/$PLUGIN/"
+          cp "build-out/$PLUGIN.dll" "build-out/$PLUGIN.deps.json" build-out/MySqlConnector.dll build-out/PanoramaManager.dll "out/$PLUGIN/"
 
       - name: Verify the layout
         run: |
@@ -54,11 +55,13 @@ jobs:
           test -f "out/$PLUGIN/$PLUGIN.dll"
           test -f "out/$PLUGIN/$PLUGIN.deps.json"
           test -f "out/$PLUGIN/MySqlConnector.dll"
+          test -f "out/$PLUGIN/PanoramaManager.dll"
           test ! -e "out/$PLUGIN/CS2MenuManager.dll"
+          test ! -e "out/$PLUGIN/CounterStrikeSharp.API.dll"
 
           # Stage only copies what it lists. A new package would build fine and then fail to load on
           # the server, so refuse to go on until its dlls are added to Stage.
-          extra=$(grep -oE '<PackageReference Include="[^"]+"' "$PROJECT" | cut -d'"' -f2 | grep -vxF -e 'CounterStrikeSharp.API' -e 'MySqlConnector' -e 'CS2MenuManager' || true)
+          extra=$(grep -oE '<PackageReference Include="[^"]+"' "$PROJECT" | cut -d'"' -f2 | grep -vxF -e 'CounterStrikeSharp.API' -e 'MySqlConnector' -e 'PanoramaManager' || true)
           if [ -n "$extra" ]; then
             echo "::error::Unhandled PackageReference: $extra - add its dlls to the Stage step."
             exit 1

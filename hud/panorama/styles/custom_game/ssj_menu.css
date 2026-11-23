@@ -1,0 +1,235 @@
+/*
+    ssj_menu - !ssj: the SSJ settings. Include hud_shared first.
+
+    The shell (hud-root / hud-card / hud-head / hud-exit / hud-foot) is hud_shared's, the option rows and
+    the mini map of the screen are the timer's !hud panel's (sharptimer_menu.css), with the timer's ice
+    blue as the accent. One page, no tabs: six setting rows on the left, where the card goes, its size
+    and the resets on the right. Fill-only tiles, no borders around cards. Fixed body height.
+
+    The mini map is the screen at 300x169 (k = 300 / 1920 = 0.15625). Its spots are ssj_hud.css's spots
+    for an M card with 6 jumps (232x183 there, 36x29 here), scaled by k. CS2's own HUD is drawn faint,
+    and the timer HUD's default spots (card, speed, keys, map top) a little less faint, since SSJ runs on
+    the timer servers.
+*/
+
+.sjm-root { width: 780px; }
+.sjm-root.hud-card { border-left-color: #62c4ff; }
+.sjm-root .hud-title { width: fit-children; letter-spacing: 1.8px; font-size: 19px; }
+.sjm-tag { margin-left: 12px; }
+
+.fill { width: fill-parent-flow(1.0); height: 1px; }
+
+.sm-k {
+    font-family: Stratum2 Mono;
+    font-size: 9.5px;
+    color: #8b939c;
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+}
+
+/* ------------------------------------------------------------------ body */
+
+.sjm-body {
+    flow-children: right;
+    width: 100%;
+    height: 340px;
+    padding: 16px 20px 14px 20px;
+}
+.sjm-left { flow-children: down; width: 420px; }
+.sjm-right { flow-children: down; width: fill-parent-flow(1.0); margin-left: 20px; }
+
+/* ------------------------------------------------------------------ option rows (the timer's show / hide rows) */
+
+.vh-row {
+    flow-children: right;
+    width: 100%;
+    height: 46px;
+    margin-bottom: 5px;
+    padding: 0px 10px 0px 12px;
+    background-color: #ffffff06;
+    transition-property: opacity;
+    transition-duration: 0.2s;
+}
+.vh-row.disabled { opacity: 0.35; }
+.vh-txt { flow-children: down; width: fill-parent-flow(1.0); vertical-align: center; }
+.se-k {
+    font-family: Stratum2 Medium Condensed;
+    font-size: 14px;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+.se-d {
+    width: 100%;
+    margin-top: 1px;
+    font-family: Stratum2 Regular;
+    font-size: 11px;
+    color: #8b939c;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.se-opts { flow-children: right; width: fit-children; }
+.vh-opts { vertical-align: center; margin-left: 8px; }
+
+.se-opt {
+    width: fit-children;
+    height: 26px;
+    padding: 0px 11px 0px 11px;
+    margin-right: 4px;
+    background-color: #ffffff0a;
+    transition-property: background-color;
+    transition-duration: 0.2s;
+}
+.se-opt:last-child { margin-right: 0px; }
+.se-opt:hover { background-color: #ffffff16; }
+.se-opt-lbl {
+    width: fit-children;
+    font-family: Stratum2 Medium Condensed;
+    font-size: 13px;
+    color: #aab1b9;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    vertical-align: center;
+    transition-property: color;
+    transition-duration: 0.2s;
+}
+.se-opt:hover .se-opt-lbl { color: #ffffff; }
+.se-opt.on { background-color: #62c4ff29; border-bottom: 2px solid #62c4ff; }
+.se-opt.on .se-opt-lbl { color: #62c4ff; }
+
+/* jumps 1..10: square tiles, no letter-spacing (it trails the last digit and pushes centred text left) */
+.se-opt.sjm-num { width: 23px; padding: 0px; margin-right: 2px; }
+.se-opt.sjm-num:last-child { margin-right: 0px; }
+.sjm-num .se-opt-lbl { width: 100%; text-align: center; letter-spacing: 0px; font-size: 12.5px; }
+
+/* accent swatches */
+.se-opt.sw-opt { width: 26px; padding: 0px; }
+.sw { width: 12px; height: 12px; horizontal-align: center; vertical-align: center; }
+.sw-ice { background-color: #62c4ff; }
+.sw-orange { background-color: #f7783c; }
+.sw-pink { background-color: #ff6fae; }
+.sw-lime { background-color: #a2e05a; }
+.sw-white { background-color: #e8ebee; }
+
+/* ------------------------------------------------------------------ where it goes: the mini map */
+
+.sjm-where-box {
+    flow-children: down;
+    width: 100%;
+    transition-property: opacity;
+    transition-duration: 0.2s;
+}
+.sjm-where-box.disabled { opacity: 0.35; }
+.sjm-lhead { flow-children: right; width: 100%; margin-bottom: 7px; }
+.sjm-where {
+    font-family: Stratum2 Mono;
+    font-size: 9.5px;
+    color: #62c4ff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* the screen, 16:9 */
+.mm { width: 300px; height: 169px; background-color: #ffffff0a; overflow: clip; }
+
+/* CS2's own HUD, faint */
+.mm-cs { background-color: #ffffff12; }
+.mm-radar { width: 42.9px; height: 42.9px; margin: 2px 0px 0px 2px; }
+.mm-money { width: 16.1px; height: 4.7px; margin: 46.2px 0px 0px 3.3px; }
+.mm-score { width: 62.3px; height: 7.4px; horizontal-align: center; margin-top: 1.3px; }
+.mm-kill { width: 46.9px; height: 9.4px; horizontal-align: right; margin: 11.4px 2.7px 0px 0px; }
+.mm-chat { width: 90.4px; height: 46.9px; vertical-align: bottom; margin: 0px 0px 20.1px 3.3px; background-color: #ffffff0a; }
+.mm-hp { width: 43.5px; height: 8px; vertical-align: bottom; margin: 0px 0px 2.7px 3.3px; }
+.mm-ammo { width: 28.1px; height: 8px; horizontal-align: right; vertical-align: bottom; margin: 0px 4px 2.7px 0px; }
+.mm-weap { width: 20.1px; height: 16.1px; horizontal-align: right; vertical-align: bottom; margin: 0px 4px 14.7px 0px; }
+.mm-x { width: 3px; height: 3px; horizontal-align: center; vertical-align: center; background-color: #4ef05a99; }
+
+/* the timer HUD's default spots: card, speed, keys, map top */
+.mm-st { background-color: #62c4ff1c; }
+.mm-st-card { width: 58.1px; height: 18.8px; horizontal-align: center; vertical-align: bottom; margin-bottom: 18.4px; }
+.mm-st-sp { width: 27.2px; height: 10px; horizontal-align: center; margin-top: 91.6px; }
+.mm-st-ks { width: 15.9px; height: 15px; horizontal-align: right; vertical-align: bottom; margin: 0px 2.5px 53.1px 0px; }
+.mm-st-mr { width: 36.9px; height: 14.5px; margin: 55px 0px 0px 2.8px; }
+
+/* the SSJ card */
+.mm-blk {
+    background-color: #62c4ffd9;
+    transition-property: opacity;
+    transition-duration: 0.2s;
+}
+.mm-blk.off { opacity: 0.18; }
+.mm-blk.sz-s { width: 30.8px; height: 24.3px; }
+.mm-blk.sz-m { width: 36.2px; height: 28.6px; }
+.mm-blk.sz-l { width: 41.7px; height: 32.9px; }
+.mm-blk-l {
+    horizontal-align: center;
+    vertical-align: center;
+    font-family: Stratum2 Mono;
+    font-weight: bold;
+    font-size: 7px;
+    letter-spacing: 0.6px;
+    color: #0b0f14cc;
+}
+
+/* the spots: an outline on hover, a faint one on the spot in use */
+.mm-z { width: 38px; height: 26px; }
+.mm-z-in {
+    width: 100%;
+    height: 100%;
+    border: 1px solid #ffffff00;
+    transition-property: background-color;
+    transition-duration: 0.2s;
+}
+.mm-z:hover .mm-z-in { border: 1px solid #62c4ffcc; background-color: #62c4ff14; }
+.mm-z.cur .mm-z-in { border: 1px solid #62c4ff66; }
+
+/* ssj_hud.css's spots, scaled by k */
+.mm-blk.p-xl, .mm-z.z-xl { horizontal-align: right; vertical-align: center; margin-right: 171.9px; }   /* Left of the crosshair */
+.mm-blk.p-xr, .mm-z.z-xr { horizontal-align: left; vertical-align: center; margin-left: 171.9px; }    /* Right of the crosshair */
+.mm-blk.p-xa, .mm-z.z-xa { horizontal-align: center; vertical-align: bottom; margin-bottom: 93.8px; } /* Above the crosshair */
+.mm-blk.p-tc, .mm-z.z-tc { horizontal-align: center; vertical-align: top; margin-top: 19.4px; }       /* Top center */
+.mm-blk.p-rm, .mm-z.z-rm { horizontal-align: right; vertical-align: center; margin-right: 2.5px; transform: translate3d(0px, -4.7px, 0px); }   /* Right side */
+.mm-blk.p-br, .mm-z.z-br { horizontal-align: left; vertical-align: bottom; margin-left: 182.2px; margin-bottom: 18.4px; }                       /* Next to the timer */
+
+.sm-hint {
+    margin-top: 7px;
+    font-family: Stratum2 Regular;
+    font-size: 11px;
+    color: #5c646d;
+}
+
+/* ------------------------------------------------------------------ size and the resets */
+
+.vh-row.sjm-size { margin-top: 9px; height: 40px; }
+.sjm-reset { flow-children: right; width: 100%; margin-top: 2px; }
+.se-opt.sjm-rs { margin-right: 4px; }
+.se-opt.sjm-rs:hover { background-color: #f2645033; }
+.rs-msg {
+    vertical-align: center;
+    margin-left: 8px;
+    font-family: Stratum2 Regular;
+    font-size: 12px;
+    color: #4fd17f;
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.sjm-foot { height: fit-children; }
+.sm-cmd {
+    vertical-align: center;
+    margin-right: 4px;
+    padding: 2px 5px 2px 5px;
+    background-color: #ffffff0d;
+    font-family: Stratum2 Mono;
+    font-size: 10px;
+    color: #d7dce1;
+}
+.sm-foot-t {
+    vertical-align: center;
+    margin-left: 2px;
+    margin-right: 16px;
+    font-family: Stratum2 Mono;
+    font-size: 9.5px;
+    color: #5c646d;
+    letter-spacing: 1px;
+}

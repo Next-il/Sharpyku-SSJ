@@ -8,18 +8,18 @@ using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
-using CS2MenuManager.API.Class;
-using CS2MenuManager.API.Menu;
+using PanoramaManager;
 using SharpTimerAPI;
 using SharpTimerAPI.Events;
+using SSJPlugin.Panels;
 
 namespace SSJPlugin;
 
-public class SSJPlugin : BasePlugin
+public partial class SSJPlugin : BasePlugin
 {
     public override string ModuleAuthor => "EliteGames, Next-il";
     public override string ModuleName => "SSJ-Plugin";
-    public override string ModuleVersion => "2.1.1-next";
+    public override string ModuleVersion => "2.2.0-next";
 
     // ─── Sync algorithm constants (from FL-StrafeMaster) ───
     private const float  AccelDeadzone          = 0.20f;
@@ -32,6 +32,20 @@ public class SSJPlugin : BasePlugin
     private ISharpTimerEventSender? _stEventSender;
     private string? _dbConnectionString;
     private PluginConfig _config = new();
+
+    // Next-il: the Panorama HUD (Panels/). Null when Hud.Enabled is false or the layout could not be spawned; every
+    // jump then goes to chat as before.
+    private SsjHud? _hud;
+    private SsjMenu? _menu;
+
+    /// <summary>The table check at load. Loads and saves wait for it, so they know whether the Hud column is there.</summary>
+    private Task _schemaReady = Task.CompletedTask;
+
+    /// <summary>ssj_settings has the Hud column (ssj-hud-settings.sql). Without it the HUD choices last a session.</summary>
+    private volatile bool _hudColumn;
+
+    /// <summary>SteamIDs with a save queued; settings are written 2s after the last change, or on disconnect.</summary>
+    private readonly HashSet<ulong> _pendingSaves = new();
 
     // ─── Plugin Config (auto-generated JSON) ───
     public class PluginConfig
@@ -47,6 +61,7 @@ public class SSJPlugin : BasePlugin
         public int GroundSettleTicksAir { get; set; } = 3;
         public int ChainResetGroundTicks { get; set; } = 24;
         public DatabaseConfig Database { get; set; } = new();
+        public HudConfig Hud { get; set; } = new();
     }
 
     public class DatabaseConfig
@@ -60,19 +75,96 @@ public class SSJPlugin : BasePlugin
         public string TableName { get; set; } = "ssj_settings";
     }
 
+    /// <summary>"Hud" in config.json. Every key is optional: a config without the section gets these defaults.</summary>
+    public class HudConfig
+    {
+        /// <summary>The Panorama card and the clickable !ssj menu. False brings back chat only, with !ssj taking
+        /// chat arguments. Takes effect on a plugin load.</summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>Where a player's stats go until they pick: hud, chat or both.</summary>
+        public string DefaultOutput { get; set; } = "hud";
+
+        /// <summary>xl (left of the crosshair), xr (right of it), xa (above it), tc (top center), rm (right side)
+        /// or br (next to the timer card).</summary>
+        public string DefaultSpot { get; set; } = "xl";
+
+        /// <summary>s, m or l.</summary>
+        public string DefaultSize { get; set; } = "m";
+
+        /// <summary>Seconds the card stays after a run's last jump: 3, 6 or 10, or 0 for until the next run.</summary>
+        public int DefaultHoldSeconds { get; set; } = 6;
+
+        /// <summary>ice, orange, pink, lime or white: the timer HUD's accents.</summary>
+        public string DefaultAccent { get; set; } = "ice";
+    }
+
     public override void Load(bool hotReload)
     {
         LoadConfig();
         RegisterListener<Listeners.OnTick>(OnTick);
-        RegisterListener<Listeners.OnClientDisconnect>(slot => _players.TryRemove(slot, out _));
+        RegisterListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
+        RegisterListener<Listeners.OnMapStart>(_ => _hud?.MapStart());
         RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
         RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
+
+        HudLoad();
 
         if (hotReload)
         {
             foreach (var p in Utilities.GetPlayers())
-                if (p is { IsValid: true, IsBot: false, IsHLTV: false })
-                    _players[p.Slot] = new PlayerData();
+            {
+                if (p is not { IsValid: true, IsBot: false, IsHLTV: false }) continue;
+                _players[p.Slot] = new PlayerData();
+                if (p.SteamID != 0)
+                {
+                    var steamId = p.SteamID;
+                    _ = Task.Run(async () => await LoadPlayerSettingsAsync(steamId));
+                }
+                _hud?.Attach(p);
+            }
+        }
+    }
+
+    public override void Unload(bool hotReload)
+    {
+        foreach (var steamId in _pendingSaves.ToList())
+            FlushSave(steamId);
+
+        _menu?.Dispose();
+        _hud?.Dispose();
+        _menu = null;
+        _hud = null;
+        try { Panorama.Shutdown(); } catch { /* never started, or already down */ }
+    }
+
+    private void HudLoad()
+    {
+        if (!_config.Hud.Enabled)
+        {
+            Logger.LogInformation("[SSJ] HUD off (config.json Hud.Enabled = false), stats go to chat.");
+            return;
+        }
+
+        try
+        {
+            Panorama.Init(this);
+            _hud = new SsjHud(this);
+            _hud.Init();
+            if (!_hud.Enabled)
+            {
+                _hud = null;
+                return;
+            }
+
+            _menu = new SsjMenu(this, _hud);
+            _menu.Init();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[SSJ] Panorama failed to start, stats go to chat.");
+            _hud = null;
+            _menu = null;
         }
     }
 
@@ -93,7 +185,9 @@ public class SSJPlugin : BasePlugin
     {
         if (e is StartTimerEvent startEvent && startEvent.Player != null && startEvent.Player.IsValid)
         {
-            var pd = _players.GetOrAdd(startEvent.Player.Slot, _ => new PlayerData());
+            var player = startEvent.Player;
+            var pd = _players.GetOrAdd(player.Slot, _ => new PlayerData());
+            CloseRun(player, pd);
             pd.TimerStarted = true;
             pd.ResetChain();
         }
@@ -105,6 +199,7 @@ public class SSJPlugin : BasePlugin
         if (player != null && player.IsValid && !player.IsBot)
         {
             var pd = _players.GetOrAdd(player.Slot, _ => new PlayerData());
+            CloseRun(player, pd);
             pd.TimerStarted = false;
             pd.ResetChain();
         }
@@ -119,8 +214,32 @@ public class SSJPlugin : BasePlugin
             ulong steamId = player.SteamID;
             if (steamId != 0)
                 _ = Task.Run(async () => await LoadPlayerSettingsAsync(steamId));
+            _hud?.Attach(player);
         }
         return HookResult.Continue;
+    }
+
+    private void OnClientDisconnect(int slot)
+    {
+        var player = Utilities.GetPlayerFromSlot(slot);
+        if (player is { IsValid: true } && player.SteamID != 0)
+            FlushSave(player.SteamID);
+
+        _players.TryRemove(slot, out _);
+        _menu?.Forget(slot);
+        _hud?.Forget(slot);
+    }
+
+    /// <summary>
+    /// A run is over before its chain broke (a timer restart or a respawn): its card goes, and with Repeat off a run
+    /// that showed anything counts as the one shown.
+    /// </summary>
+    private void CloseRun(CCSPlayerController player, PlayerData pd)
+    {
+        if (pd.ShownInChain && player.SteamID != 0 && _settings.TryGetValue(player.SteamID, out var cfg))
+            cfg.AlreadyShown = true;
+        pd.ShownInChain = false;
+        _hud?.Clear(player.Slot);
     }
 
     // ─── Config Loading ───
@@ -145,9 +264,13 @@ public class SSJPlugin : BasePlugin
         }
         else
         {
+            // Read only. A config.json without the Hud section (every server before 2.2.0) gets its defaults, and the
+            // file is never rewritten: it can sit on a mount shared by many servers.
             try
             {
                 _config = JsonSerializer.Deserialize<PluginConfig>(File.ReadAllText(cfgPath)) ?? new PluginConfig();
+                _config.Database ??= new DatabaseConfig();
+                _config.Hud ??= new HudConfig();
                 Logger.LogInformation("[SSJ] Config loaded.");
             }
             catch (Exception ex)
@@ -162,7 +285,7 @@ public class SSJPlugin : BasePlugin
         {
             var db = _config.Database;
             _dbConnectionString = $"Server={db.Host};Port={db.Port};Database={db.Database};User={db.User};Password={db.Password};";
-            _ = Task.Run(EnsureTableAsync);
+            _schemaReady = Task.Run(EnsureTableAsync);
         }
     }
 
@@ -190,6 +313,10 @@ public class SSJPlugin : BasePlugin
         };
     }
 
+    private string Tag => $"{GetTagColor()}{_config.ChatTag}{ChatColors.Default}";
+
+    private void Reply(CCSPlayerController player, string message) => player.PrintToChat($" {Tag} {message}");
+
     // ─── DB Table Creation ───
     private async Task EnsureTableAsync()
     {
@@ -198,16 +325,36 @@ public class SSJPlugin : BasePlugin
         {
             await using var conn = new MySqlConnection(_dbConnectionString);
             await conn.OpenAsync();
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $@"
-                CREATE TABLE IF NOT EXISTS {_config.Database.TableName} (
-                    SteamID BIGINT UNSIGNED PRIMARY KEY,
-                    Enabled TINYINT NOT NULL DEFAULT 1,
-                    RepeatMode TINYINT NOT NULL DEFAULT 1,
-                    MaxJumps INT NOT NULL DEFAULT 6
-                );";
-            await cmd.ExecuteNonQueryAsync();
-            Logger.LogInformation("[SSJ] Database table ready.");
+            await using (var cmd = conn.CreateCommand())
+            {
+                // A fresh install gets the Hud column here. An existing table keeps its shape: the column is added
+                // by hand with ssj-hud-settings.sql, never by the plugin.
+                cmd.CommandText = $@"
+                    CREATE TABLE IF NOT EXISTS {_config.Database.TableName} (
+                        SteamID BIGINT UNSIGNED PRIMARY KEY,
+                        Enabled TINYINT NOT NULL DEFAULT 1,
+                        RepeatMode TINYINT NOT NULL DEFAULT 1,
+                        MaxJumps INT NOT NULL DEFAULT 6,
+                        Hud VARCHAR(128) NOT NULL DEFAULT ''
+                    );";
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = @"
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @t AND COLUMN_NAME = 'Hud'";
+                cmd.Parameters.AddWithValue("@t", _config.Database.TableName);
+                _hudColumn = Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+            }
+
+            if (_hudColumn)
+                Logger.LogInformation("[SSJ] Database table ready.");
+            else
+                Logger.LogWarning("[SSJ] {Table} has no Hud column: SSJ on/off, repeat and jumps are saved, the HUD " +
+                                  "choices (chat or HUD, spot, size, accent, hold) last until the player leaves. " +
+                                  "Run ssj-hud-settings.sql to keep them.", _config.Database.TableName);
         }
         catch (Exception ex)
         {
@@ -221,24 +368,40 @@ public class SSJPlugin : BasePlugin
         if (_dbConnectionString == null) return;
         try
         {
+            await _schemaReady;
+            var hudColumn = _hudColumn;
+
             await using var conn = new MySqlConnection(_dbConnectionString);
             await conn.OpenAsync();
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT Enabled, RepeatMode, MaxJumps FROM {_config.Database.TableName} WHERE SteamID = @sid";
+            cmd.CommandText = hudColumn
+                ? $"SELECT Enabled, RepeatMode, MaxJumps, Hud FROM {_config.Database.TableName} WHERE SteamID = @sid"
+                : $"SELECT Enabled, RepeatMode, MaxJumps FROM {_config.Database.TableName} WHERE SteamID = @sid";
             cmd.Parameters.AddWithValue("@sid", steamId);
             await using var reader = await cmd.ExecuteReaderAsync();
-            if (await reader.ReadAsync())
+            if (!await reader.ReadAsync()) return;
+
+            var enabled = reader.GetInt32(0) == 1;
+            var repeat = reader.GetInt32(1) == 1;
+            var mode = reader.GetInt32(2);
+            var hud = hudColumn && !reader.IsDBNull(3) ? reader.GetString(3) : null;
+
+            // Settings are only ever touched on the game thread.
+            Server.NextFrame(() =>
             {
-                var settings = _settings.GetOrAdd(steamId, _ => new PlayerSettings
-                {
-                    Enabled = _config.DefaultEnabled,
-                    Repeat = _config.DefaultRepeat,
-                    Mode = _config.DefaultMaxJumps
-                });
-                settings.Enabled = reader.GetInt32(0) == 1;
-                settings.Repeat = reader.GetInt32(1) == 1;
-                settings.Mode = reader.GetInt32(2);
-            }
+                var settings = _settings.GetOrAdd(steamId, _ => PlayerSettings.Defaults(_config));
+                if (settings.Touched) return;   // changed in !ssj before the row arrived: that choice wins
+
+                settings.Enabled = enabled;
+                settings.Repeat = repeat;
+                settings.Mode = Math.Clamp(mode, 1, PlayerSettings.MaxJumps);
+                if (hudColumn) settings.UnpackHud(hud, _config);
+
+                var player = Utilities.GetPlayers().FirstOrDefault(p => p is { IsValid: true } && p.SteamID == steamId);
+                if (player == null) return;
+                _hud?.SettingsChanged(player);
+                _menu?.Refresh(player);
+            });
         }
         catch (Exception ex)
         {
@@ -246,38 +409,104 @@ public class SSJPlugin : BasePlugin
         }
     }
 
+    private sealed record SaveRow(ulong SteamId, bool Enabled, bool Repeat, int Mode, string Hud);
+
+    /// <summary>Saves the player's settings 2s after the last change, so clicking through the menu is one write.</summary>
+    private void QueueSave(ulong steamId)
+    {
+        if (_dbConnectionString == null || steamId == 0 || !_pendingSaves.Add(steamId)) return;
+        AddTimer(2f, () => FlushSave(steamId));
+    }
+
+    private void FlushSave(ulong steamId)
+    {
+        if (!_pendingSaves.Remove(steamId) || !_settings.TryGetValue(steamId, out var s)) return;
+        var row = new SaveRow(steamId, s.Enabled, s.Repeat, s.Mode, s.PackHud(_config));
+        _ = Task.Run(async () => await SavePlayerSettingsAsync(row));
+    }
+
     // ─── Save Player Settings to DB ───
-    private async Task SavePlayerSettingsAsync(ulong steamId, PlayerSettings settings)
+    private async Task SavePlayerSettingsAsync(SaveRow row)
     {
         if (_dbConnectionString == null) return;
         try
         {
+            await _schemaReady;
+            var hudColumn = _hudColumn;
+
             await using var conn = new MySqlConnection(_dbConnectionString);
             await conn.OpenAsync();
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $@"
-                INSERT INTO {_config.Database.TableName} (SteamID, Enabled, RepeatMode, MaxJumps)
-                VALUES (@sid, @en, @rep, @mj)
-                ON DUPLICATE KEY UPDATE Enabled=@en, RepeatMode=@rep, MaxJumps=@mj";
-            cmd.Parameters.AddWithValue("@sid", steamId);
-            cmd.Parameters.AddWithValue("@en", settings.Enabled ? 1 : 0);
-            cmd.Parameters.AddWithValue("@rep", settings.Repeat ? 1 : 0);
-            cmd.Parameters.AddWithValue("@mj", settings.Mode);
+            cmd.CommandText = hudColumn
+                ? $@"
+                    INSERT INTO {_config.Database.TableName} (SteamID, Enabled, RepeatMode, MaxJumps, Hud)
+                    VALUES (@sid, @en, @rep, @mj, @hud)
+                    ON DUPLICATE KEY UPDATE Enabled=@en, RepeatMode=@rep, MaxJumps=@mj, Hud=@hud"
+                : $@"
+                    INSERT INTO {_config.Database.TableName} (SteamID, Enabled, RepeatMode, MaxJumps)
+                    VALUES (@sid, @en, @rep, @mj)
+                    ON DUPLICATE KEY UPDATE Enabled=@en, RepeatMode=@rep, MaxJumps=@mj";
+            cmd.Parameters.AddWithValue("@sid", row.SteamId);
+            cmd.Parameters.AddWithValue("@en", row.Enabled ? 1 : 0);
+            cmd.Parameters.AddWithValue("@rep", row.Repeat ? 1 : 0);
+            cmd.Parameters.AddWithValue("@mj", row.Mode);
+            if (hudColumn) cmd.Parameters.AddWithValue("@hud", row.Hud);
             await cmd.ExecuteNonQueryAsync();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "[SSJ] Failed to save settings for {SteamId}", steamId);
+            Logger.LogError(ex, "[SSJ] Failed to save settings for {SteamId}", row.SteamId);
         }
     }
 
-    // ─── Player Settings (persisted by SteamID) ───
-    public class PlayerSettings
+    // ─── Settings, for the plugin, the HUD and the menu ───
+
+    /// <summary>The player's settings, or the server's defaults until their row loads.</summary>
+    internal PlayerSettings SettingsFor(CCSPlayerController player) =>
+        _settings.GetOrAdd(player.SteamID, _ => PlayerSettings.Defaults(_config));
+
+    /// <summary>Something in the player's settings changed: save it and redraw their card and menu.</summary>
+    internal void SettingsChanged(CCSPlayerController player, PlayerSettings settings)
     {
-        public bool Enabled { get; set; }
-        public bool Repeat  { get; set; }
-        public int  Mode    { get; set; }
-        public bool AlreadyShown { get; set; }
+        settings.Touched = true;
+        QueueSave(player.SteamID);
+        _hud?.SettingsChanged(player);
+        _menu?.Refresh(player);
+    }
+
+    /// <summary>SSJ on or off. Off also ends the run on the card and the chain being tracked.</summary>
+    internal void SetEnabled(CCSPlayerController player, PlayerSettings settings, bool on)
+    {
+        if (settings.Enabled == on) return;
+        settings.Enabled = on;
+        if (!on)
+        {
+            if (_players.TryGetValue(player.Slot, out var pd))
+                pd.ResetChain();
+            _hud?.Clear(player.Slot);
+        }
+    }
+
+    /// <summary>The old menu's Reset Stats: the current chain and the card start over, and Repeat off shows again.</summary>
+    internal void ResetStats(CCSPlayerController player, PlayerSettings settings)
+    {
+        if (_players.TryGetValue(player.Slot, out var data))
+            data.ResetChain();
+        settings.AlreadyShown = false;
+        _hud?.Clear(player.Slot);
+    }
+
+    /// <summary>Every setting back to config.json's defaults.</summary>
+    internal void ResetSettings(CCSPlayerController player, PlayerSettings settings)
+    {
+        var wasOn = settings.Enabled;
+        settings.ResetToDefaults(_config);
+        if (wasOn && !settings.Enabled)
+        {
+            if (_players.TryGetValue(player.Slot, out var pd))
+                pd.ResetChain();
+            _hud?.Clear(player.Slot);
+        }
     }
 
     // ─── Air State: per-jump frame data (velocity-based sync à la FL-StrafeMaster) ───
@@ -315,6 +544,7 @@ public class SSJPlugin : BasePlugin
         public float PrevTakeoffSpeed { get; set; }  // Takeoff speed of previous jump
         public float LastTakeoffSpeed { get; set; }  // Takeoff speed of current jump
         public bool  TimerStarted { get; set; }      // Only track SSJ after leaving startzone
+        public bool  ShownInChain { get; set; }      // A jump of this chain went to the HUD or chat
 
         public void ResetChain()
         {
@@ -340,12 +570,7 @@ public class SSJPlugin : BasePlugin
             ulong steamId = player.SteamID;
             if (steamId == 0) continue;
 
-            var cfg = _settings.GetOrAdd(steamId, _ => new PlayerSettings
-            {
-                Enabled = _config.DefaultEnabled,
-                Repeat = _config.DefaultRepeat,
-                Mode = _config.DefaultMaxJumps
-            });
+            var cfg = _settings.GetOrAdd(steamId, _ => PlayerSettings.Defaults(_config));
             if (!cfg.Enabled) continue;
 
             var pd = _players.GetOrAdd(player.Slot, _ => new PlayerData());
@@ -379,6 +604,13 @@ public class SSJPlugin : BasePlugin
                 // Chain reset if on ground too long — SSJ stops until next startzone
                 if (st.StableGroundCount > _config.ChainResetGroundTicks && pd.JumpNumber > 0)
                 {
+                    // Next-il: the run on the card ends here and starts its hold time. Repeat off: a run that
+                    // showed anything is the one shown (it used to be cleared again on the next chain's first jump,
+                    // so Repeat off did nothing).
+                    if (pd.ShownInChain) cfg.AlreadyShown = true;
+                    pd.ShownInChain = false;
+                    _hud?.End(player);
+
                     pd.ResetChain();
                     pd.TimerStarted = false;
                 }
@@ -412,7 +644,12 @@ public class SSJPlugin : BasePlugin
                     if (pd.JumpNumber == 1)
                     {
                         pd.PreSpeed = horizSpeed;
-                        cfg.AlreadyShown = false;
+                        pd.ShownInChain = false;
+                        if (cfg.Repeat) cfg.AlreadyShown = false;
+
+                        // A new run on the card: PRE and empty rows, filled as the jumps land.
+                        if (!cfg.AlreadyShown)
+                            _hud?.Begin(player, RoundSpeed(pd.PreSpeed));
                     }
                 }
             }
@@ -499,9 +736,15 @@ public class SSJPlugin : BasePlugin
                 st.LastVz = vz;
             }
         }
+
+        // The card's timed steps (hold time, spectators, panels not open yet), 8 times a second.
+        if (_hud != null && Server.TickCount % 8 == 0)
+            _hud.Tick();
     }
 
-    // ─── Handle Landing: print SSJ stats ───
+    private static int RoundSpeed(float speed) => (int)MathF.Round(speed, MidpointRounding.AwayFromZero);
+
+    // ─── Handle Landing: report SSJ stats (HUD card and/or chat) ───
     private void HandleLanding(CCSPlayerController player, PlayerData pd, PlayerSettings cfg, AirState st, float endHorizSpeed)
     {
         if (st.TotalAirTicks < _config.MinAirTicksToReport) return;
@@ -520,6 +763,25 @@ public class SSJPlugin : BasePlugin
             ? Math.Round((double)gain / st.StartHorizSpeed * 100.0, 1)
             : 0;
 
+        // Next-il: the card gets every reported jump (spectators see it too); chat when the player keeps it, or
+        // when the card cannot reach them.
+        _hud?.Add(player, new JumpStat(pd.JumpNumber, RoundSpeed(endHorizSpeed), gainPct, sync, st.StrafeCount));
+        if (cfg.ShowsChat || _hud == null || !_hud.Reaches(player))
+            PrintJumpToChat(player, pd, st, endHorizSpeed, sync, gainPct);
+
+        st.LastPrintTick = tick;
+        pd.ShownInChain = true;
+
+        if (pd.JumpNumber >= cfg.Mode)
+        {
+            cfg.AlreadyShown = true;
+            _hud?.End(player);
+        }
+    }
+
+    /// <summary>The original chat line, unchanged.</summary>
+    private void PrintJumpToChat(CCSPlayerController player, PlayerData pd, AirState st, float endHorizSpeed, int sync, double gainPct)
+    {
         string syncColor = sync switch
         {
             >= 80 => ChatColors.Green.ToString()!,
@@ -537,7 +799,7 @@ public class SSJPlugin : BasePlugin
 
         string gainSign = gainPct >= 0 ? "+" : "";
 
-        string tag = $"{GetTagColor()}{_config.ChatTag}{ChatColors.Default}";
+        string tag = Tag;
 
         if (pd.JumpNumber == 1)
         {
@@ -558,11 +820,6 @@ public class SSJPlugin : BasePlugin
                 $" | Sync: {syncColor}{sync}%{ChatColors.Default}" +
                 $" | Strafes: {ChatColors.Purple}{st.StrafeCount}{ChatColors.Default}");
         }
-
-        st.LastPrintTick = tick;
-
-        if (pd.JumpNumber >= cfg.Mode)
-            cfg.AlreadyShown = true;
     }
 
     // ─── Heading from velocity vector ───
@@ -572,77 +829,81 @@ public class SSJPlugin : BasePlugin
         return MathF.Atan2(y, x) * (180f / MathF.PI);
     }
 
-    // ─── !ssj Command: Open the settings menu (CS2MenuManager, shared/CS2MenuManager) ───
-    [ConsoleCommand("css_ssj", "Open SSJ settings menu")]
+    // ─── !ssj: the HUD settings menu, or chat arguments ───
+    // Next-il fork: the CS2MenuManager WASD menu is gone. !ssj opens the clickable Panorama menu (Panels/SsjMenu.cs);
+    // the arguments below work with or without it, and are the only way in when the HUD is off.
+    [ConsoleCommand("css_ssj", "SSJ settings: !ssj, or !ssj on|off|1-10|hud|chat|both|repeat|reset")]
     public void OnSSJCommand(CCSPlayerController? player, CommandInfo info)
     {
-        if (player == null || !player.IsValid) return;
+        if (player == null || !player.IsValid || player.IsBot) return;
 
-        var steamId = player.SteamID;
-        var settings = _settings.GetOrAdd(steamId, _ => new PlayerSettings
+        var settings = SettingsFor(player);
+        var arg = info.ArgCount > 1 ? info.GetArg(1).Trim().ToLowerInvariant() : "";
+
+        if (arg.Length == 0)
         {
-            Enabled = _config.DefaultEnabled,
-            Repeat = _config.DefaultRepeat,
-            Mode = _config.DefaultMaxJumps
-        });
-        OpenSSJMenu(player, settings);
-    }
-
-    // Next-il fork: the menu moved from T3Menu-API to CS2MenuManager, the menu library the rest of our
-    // plugins use, so T3Menu-API could come off every server. Items are plain text, so each change re-opens
-    // the menu to show the new state.
-    private void OpenSSJMenu(CCSPlayerController player, PlayerSettings settings)
-    {
-        string OnOff(bool on) => on ? "ON" : "OFF";
-
-        var menu = new WasdMenu("SSJ Settings", this) { ExitButton = true };
-
-        menu.AddItem($"Enabled: {OnOff(settings.Enabled)}", (p, option) =>
-        {
-            settings.Enabled = !settings.Enabled;
-            p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} SSJ {(settings.Enabled ? $"{ChatColors.Green}Enabled" : $"{ChatColors.Red}Disabled")}");
-            _ = Task.Run(async () => await SavePlayerSettingsAsync(p.SteamID, settings));
-            OpenSSJMenu(p, settings);
-        });
-
-        menu.AddItem($"Repeat: {OnOff(settings.Repeat)}", (p, option) =>
-        {
-            settings.Repeat = !settings.Repeat;
-            p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} Repeat {(settings.Repeat ? $"{ChatColors.Green}On" : $"{ChatColors.Red}Off")}");
-            _ = Task.Run(async () => await SavePlayerSettingsAsync(p.SteamID, settings));
-            OpenSSJMenu(p, settings);
-        });
-
-        menu.AddItem($"Jumps: {settings.Mode}", (p, option) => OpenJumpsMenu(p, settings, menu));
-
-        menu.AddItem("Reset Stats", (p, option) =>
-        {
-            if (_players.TryGetValue(p.Slot, out var data))
-                data.ResetChain();
-            settings.AlreadyShown = false;
-            p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} Stats reset.");
-            MenuManager.CloseActiveMenu(p);
-        });
-
-        menu.Display(player, 0);
-    }
-
-    private void OpenJumpsMenu(CCSPlayerController player, PlayerSettings settings, WasdMenu parent)
-    {
-        var menu = new WasdMenu("SSJ Jumps", this) { ExitButton = true, PrevMenu = parent };
-
-        for (var jumps = 1; jumps <= 10; jumps++)
-        {
-            var value = jumps;
-            menu.AddItem(value == settings.Mode ? $"{value} (current)" : $"{value}", (p, option) =>
-            {
-                settings.Mode = value;
-                p.PrintToChat($" {GetTagColor()}{_config.ChatTag}{ChatColors.Default} Showing {ChatColors.LightBlue}{settings.Mode}{ChatColors.Default} jumps");
-                _ = Task.Run(async () => await SavePlayerSettingsAsync(p.SteamID, settings));
-                OpenSSJMenu(p, settings);
-            });
+            if (_menu != null && _menu.Open(player)) return;
+            Reply(player, Status(settings));
+            Reply(player, $"{ChatColors.Grey}!ssj on|off · !ssj 1-10 (jumps) · !ssj hud|chat|both · !ssj repeat · !ssj reset");
+            return;
         }
 
-        menu.Display(player, 0);
+        switch (arg)
+        {
+            case "on":
+            case "off":
+                SetEnabled(player, settings, arg == "on");
+                Reply(player, $"SSJ {(settings.Enabled ? $"{ChatColors.Green}on" : $"{ChatColors.Red}off")}{ChatColors.Default}.");
+                break;
+
+            case "toggle":
+                SetEnabled(player, settings, !settings.Enabled);
+                Reply(player, $"SSJ {(settings.Enabled ? $"{ChatColors.Green}on" : $"{ChatColors.Red}off")}{ChatColors.Default}.");
+                break;
+
+            case "repeat":
+                settings.Repeat = !settings.Repeat;
+                Reply(player, settings.Repeat
+                    ? $"Every run: {ChatColors.Green}on{ChatColors.Default}."
+                    : $"Every run: {ChatColors.Red}off{ChatColors.Default}, your first run only until !ssj reset.");
+                break;
+
+            case "reset":
+                ResetStats(player, settings);
+                Reply(player, "Stats reset.");
+                _menu?.Refresh(player);
+                return;
+
+            default:
+                if (int.TryParse(arg, out var jumps) && jumps is >= 1 and <= PlayerSettings.MaxJumps)
+                {
+                    settings.Mode = jumps;
+                    Reply(player, $"Showing {ChatColors.LightBlue}{jumps}{ChatColors.Default} jumps.");
+                    break;
+                }
+
+                if (PlayerSettings.ParseOutput(arg) is { } output)
+                {
+                    settings.Output = output;
+                    Reply(player, output switch
+                    {
+                        SsjOutput.Chat => "SSJ stats go to chat.",
+                        SsjOutput.Both => "SSJ stats go to the HUD and chat.",
+                        _ => "SSJ stats go to the HUD.",
+                    });
+                    break;
+                }
+
+                Reply(player, $"{ChatColors.Grey}!ssj on|off · !ssj 1-10 (jumps) · !ssj hud|chat|both · !ssj repeat · !ssj reset");
+                return;
+        }
+
+        SettingsChanged(player, settings);
     }
+
+    private static string Status(PlayerSettings s) =>
+        $"SSJ {(s.Enabled ? $"{ChatColors.Green}on" : $"{ChatColors.Red}off")}{ChatColors.Default}" +
+        $" · {ChatColors.LightBlue}{s.Mode}{ChatColors.Default} jumps" +
+        $" · {PlayerSettings.OutputName(s.Output)}" +
+        $" · every run {(s.Repeat ? "on" : "off")}";
 }

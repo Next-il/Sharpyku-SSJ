@@ -1,30 +1,35 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- net10.0 and CounterStrikeSharp.API 1.0.374 are PanoramaManager's floor: the package targets net10.0 and
+         declares that CSS version, so a lower pin fails restore with NU1605. -->
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MySqlConnector" Version="2.4.0" />
-    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.364">
-      <PrivateAssets>none</PrivateAssets>
-      <ExcludeAssets>runtime</ExcludeAssets>
-      <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <!-- Loaded at runtime from shared/CS2MenuManager - the same 1.0.42 build every server ships -->
-    <PackageReference Include="CS2MenuManager" Version="1.0.42">
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </PackageReference>
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.374" />
+    <!-- The SSJ card and the !ssj menu (Panels/). Copied next to the plugin by CopyRuntimePackages below: each
+         CounterStrikeSharp plugin loads from its own folder. Same version as our other HUD plugins. -->
+    <PackageReference Include="PanoramaManager" Version="0.4.3" />
     <Reference Include="SharpTimerAPI">
       <!-- Reference only: the copy from Mounts shared/SharpTimerAPI, loaded at runtime from there -->
       <HintPath>lib\SharpTimerAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <!-- Copy only what the host does not provide. CopyLocalLockFileAssemblies stays off: it would copy
+       CounterStrikeSharp.API's whole dependency tree beside the plugin. -->
+  <Target Name="CopyRuntimePackages" AfterTargets="ResolveLockFileCopyLocalFiles">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Include="@(RuntimeCopyLocalItems)"
+                               Condition="'%(RuntimeCopyLocalItems.NuGetPackageId)' == 'PanoramaManager' Or '%(RuntimeCopyLocalItems.NuGetPackageId)' == 'MySqlConnector'" />
+    </ItemGroup>
+  </Target>
 
 </Project>
