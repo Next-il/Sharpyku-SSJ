@@ -15,7 +15,7 @@
     <PackageReference Include="CounterStrikeSharp.API" Version="1.0.374" />
     <!-- The SSJ card and the !ssj menu (Panels/). Copied next to the plugin by CopyRuntimePackages below: each
          CounterStrikeSharp plugin loads from its own folder. Same version as our other HUD plugins. -->
-    <PackageReference Include="PanoramaManager" Version="0.4.3" />
+    <PackageReference Include="PanoramaManager" Version="0.4.5" />
     <Reference Include="SharpTimerAPI">
       <!-- Reference only: the copy from Mounts shared/SharpTimerAPI, loaded at runtime from there -->
       <HintPath>lib\SharpTimerAPI.dll</HintPath>
